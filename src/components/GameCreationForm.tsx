@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useGameContext } from "@/contexts/GameContext";
 import { Button } from "@/components/ui/button";
@@ -40,9 +39,8 @@ const GameCreationForm: React.FC<GameCreationFormProps> = ({ onGoBack, onGameCre
       const formattedEndPage = formatWikiUrl(endPage);
       
       const gameId = createGame(formattedStartPage, formattedEndPage, timeLimit);
-      if (gameId) {
-        onGameCreated(gameId);
-      }
+      // Instead of testing the return value, we'll just call onGameCreated
+      onGameCreated(formattedStartPage);
     } catch (error) {
       toast({
         title: "Failed to create game",

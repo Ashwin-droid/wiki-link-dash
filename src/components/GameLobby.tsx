@@ -10,13 +10,14 @@ interface GameLobbyProps {
 }
 
 const GameLobby: React.FC<GameLobbyProps> = ({ onLeaveGame }) => {
-  const { game, currentPlayer, userId, startGame, kickPlayer } = useGameContext();
+  const { game, currentPlayer, startGame, kickPlayer } = useGameContext();
 
   if (!game || !currentPlayer) {
     return null;
   }
 
-  const isHost = game.hostId === userId;
+  // Check if current player is the host
+  const isHost = game.hostId === currentPlayer.id;
   const gameLink = `${window.location.origin}?gameId=${game.id}`;
 
   const handleCopyLink = () => {
