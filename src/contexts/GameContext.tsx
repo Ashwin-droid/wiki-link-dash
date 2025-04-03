@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Game, GameStatus, Player, LeaderboardEntry } from "../types/game";
@@ -228,15 +227,29 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
     setGame(updatedGame);
     setCurrentPlayer(updatedPlayer);
-
-    // Check if player reached the goal
-    checkGameCompletion(url);
   };
 
   const checkGameCompletion = (currentPage: string): boolean => {
-    if (!game || !currentPlayer) return false;
+    if (!game || !currentPlayer || currentPlayer.finished) return false;
     
-    if (currentPage === game.endPage && !currentPlayer.finished) {
+    // Normalize URLs for comparison
+    const normalizeUrl = (url: string): string => {
+      // Extract the path after /wiki/
+      if (url.includes('/wiki/')) {
+        return '/wiki/' + url.split('/wiki/')[1].split('#')[0].split('?')[0];
+      }
+      return url.split('#')[0].split('?')[0];
+    };
+    
+    const normalizedCurrentPage = normalizeUrl(currentPage);
+    const normalizedEndPage = normalizeUrl(game.endPage);
+    
+    console.log('Checking completion:', { 
+      current: normalizedCurrentPage, 
+      target: normalizedEndPage 
+    });
+    
+    if (normalizedCurrentPage === normalizedEndPage) {
       const finishTime = Date.now();
       
       // Mark player as finished

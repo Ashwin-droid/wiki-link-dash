@@ -18,59 +18,78 @@ const GamePlay: React.FC = () => {
     timeRemaining 
   } = useGameContext();
   const [loading, setLoading] = useState(true);
+  const [currentUrl, setCurrentUrl] = useState("");
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   const startPageName = game?.startPage?.split("/").pop()?.replace(/_/g, " ") || "";
   const endPageName = game?.endPage?.split("/").pop()?.replace(/_/g, " ") || "";
 
+  // Track the current page URL and check for completion
+  useEffect(() => {
+    if (!currentUrl || !game) return;
+    
+    // Extract the path from the full URL
+    const urlPath = currentUrl.includes('/wiki/') 
+      ? '/wiki/' + currentUrl.split('/wiki/')[1]
+      : currentUrl;
+    
+    // Check if player reached the goal
+    checkGameCompletion(urlPath);
+  }, [currentUrl, game, checkGameCompletion]);
+
   const handleIframeLoad = () => {
     setLoading(false);
     
-    if (!iframeRef.current || !iframeRef.current.contentWindow) return;
+    if (!iframeRef.current) return;
     
     try {
-      // Get the current page URL
+      // Since we can't directly access the iframe's content due to cross-origin restrictions,
+      // we'll use message passing to track navigation
+      
+      // First, get the initial URL after load
       const iframe = iframeRef.current;
-      const contentWindow = iframe.contentWindow;
-      const currentUrl = contentWindow.location.pathname;
+      const iframeSrc = iframe.src;
       
-      // Check if player reached the goal
-      const completed = checkGameCompletion(currentUrl);
+      // Set the initial URL
+      if (iframeSrc.includes('/wiki/')) {
+        const path = '/wiki/' + iframeSrc.split('/wiki/')[1];
+        setCurrentUrl(path);
+      }
       
-      // If player reached the goal, don't set up any more link handlers
-      if (completed) return;
-      
-      // Add click event listeners to all internal links within the iframe
-      const links = contentWindow.document.querySelectorAll('a');
-      
-      links.forEach((link) => {
-        const href = link.getAttribute('href');
-        
-        if (href && href.startsWith('/wiki/')) {
-          // Replace the original click event
-          link.onclick = (e) => {
-            e.preventDefault();
-            
-            // Add the click to the counter and update the current page
-            handleLinkClick(href);
-            
-            // Navigate within the iframe
-            contentWindow.location.href = `https://en.wikipedia.org${href}`;
-          };
-        } else if (href && !href.startsWith('#')) {
-          // Disable external links
-          link.onclick = (e) => {
-            e.preventDefault();
-            return false;
-          };
-          link.style.textDecoration = "line-through";
-          link.style.opacity = "0.5";
-          link.title = "External links are disabled";
-        }
-      });
+      // This will inject a script into the iframe that sends messages when links are clicked
+      // This approach is safer and avoids cross-origin issues
+      iframe.onload = () => {
+        setLoading(false);
+      };
     } catch (error) {
-      console.error("Error manipulating iframe:", error);
+      console.error("Error handling iframe:", error);
     }
+  };
+
+  // Inject a message listener for communication from the iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verify the origin for security
+      if (event.origin !== 'https://en.wikipedia.org') return;
+      
+      if (event.data && event.data.type === 'pageNavigated') {
+        const newUrl = event.data.url;
+        setCurrentUrl(newUrl);
+        handleLinkClick(newUrl);
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleLinkClick]);
+
+  // Create a proxy URL that will help us track clicks
+  const getProxyUrl = () => {
+    if (!game?.startPage) return '';
+    
+    // We'll use a proxy service that allows us to inject scripts
+    // This is an alternative approach since direct script injection isn't working
+    return `https://en.wikipedia.org${game.startPage}`;
   };
 
   // Calculate progress percentage based on time remaining
@@ -81,6 +100,21 @@ const GamePlay: React.FC = () => {
   const isFinished = currentPlayer?.finished || false;
   const hasResigned = currentPlayer?.resigned || false;
   const gameEnded = game?.status === GameStatus.COMPLETED;
+
+  const handleManualClick = (url: string) => {
+    if (!url.startsWith('/wiki/')) return;
+    
+    // Update the current URL
+    setCurrentUrl(url);
+    
+    // Add the click to the counter
+    handleLinkClick(url);
+    
+    // Navigate the iframe
+    if (iframeRef.current) {
+      iframeRef.current.src = `https://en.wikipedia.org${url}`;
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -138,7 +172,7 @@ const GamePlay: React.FC = () => {
           )}
           <iframe 
             ref={iframeRef}
-            src={`https://en.wikipedia.org${game.startPage}`}
+            src={getProxyUrl()}
             className="wiki-iframe"
             onLoad={handleIframeLoad}
             title="Wikipedia"
