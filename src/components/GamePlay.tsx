@@ -44,12 +44,12 @@ const GamePlay: React.FC = () => {
       
       let html = await res.text();
       
-      // Process the links to use a click handler instead of href navigation
+      // Process the links to make them work within our app
       html = html.replace(
-        /href="\/wiki\/([^"#]+)([#"][^"]*)?"/g,
+        /href="\/wiki\/([^"#]+)([#][^"]*)?"/g,
         (match, articleSlug, hash = "") => {
-          // Use a special class to identify these links
-          return `class="wiki-internal-link" data-article="${articleSlug}"${hash.startsWith('#') ? ` data-section="${hash.substring(1)}"` : ''}`;
+          // Convert regular wiki links into data attributes we can handle
+          return `href="javascript:void(0)" class="wiki-link" data-article="${articleSlug}"${hash ? ` data-section="${hash.substring(1)}"` : ''}`;
         }
       );
       
@@ -79,62 +79,52 @@ const GamePlay: React.FC = () => {
     }
   }, [game, fetchWikiHtml, currentArticle]);
 
-  // Handle link clicks
-  const onLinkClick = useCallback((evt: React.MouseEvent) => {
-    if (!game || !currentPlayer) return;
+  // Handle wiki link click
+  const handleWikiLinkClick = useCallback((e: MouseEvent) => {
+    // Get the clicked element
+    const target = e.target as HTMLElement;
     
-    // Find the clicked element
-    const target = evt.target as HTMLElement;
+    // Find if it's a wiki link or a child of a wiki link
+    const wikiLink = target.closest('.wiki-link');
     
-    // Check if it's a Wikipedia internal link
-    if (target.classList.contains('wiki-internal-link') || target.closest('.wiki-internal-link')) {
-      evt.preventDefault();
+    if (wikiLink) {
+      e.preventDefault();
+      e.stopPropagation();
       
-      // Get the closest link element if the click was on a child element
-      const linkElement = target.classList.contains('wiki-internal-link') 
-        ? target 
-        : target.closest('.wiki-internal-link');
+      const articleName = wikiLink.getAttribute('data-article');
       
-      if (linkElement) {
-        const newArticle = linkElement.getAttribute('data-article');
+      if (articleName) {
+        const newUrl = `/wiki/${articleName}`;
         
-        if (newArticle) {
-          const newUrl = `/wiki/${newArticle}`;
-          
-          // Update game state with the new click
-          handleLinkClick(newUrl);
-          
-          // Check if the user has reached the goal
-          const gameCompleted = checkGameCompletion(newUrl);
-          
-          if (!gameCompleted) {
-            // If game is not complete, load the new article
-            setCurrentArticle(newArticle);
-            fetchWikiHtml(newArticle).then(html => setCurrentHtml(html));
-          }
+        // Update game state with the new click
+        handleLinkClick(newUrl);
+        
+        // Check if the user has reached the goal
+        const gameCompleted = checkGameCompletion(newUrl);
+        
+        if (!gameCompleted) {
+          // If game is not complete, load the new article
+          setCurrentArticle(articleName);
+          fetchWikiHtml(articleName).then(html => setCurrentHtml(html));
         }
       }
     }
-  }, [game, currentPlayer, handleLinkClick, checkGameCompletion, fetchWikiHtml]);
+  }, [handleLinkClick, checkGameCompletion, fetchWikiHtml]);
 
-  // Add event listener for wiki links after content is loaded
+  // Set up event listener for wiki content
   useEffect(() => {
-    // Add a small delay to ensure the DOM has been updated with the wiki content
-    const timeoutId = setTimeout(() => {
-      const wikiContent = document.querySelector('.wiki-content');
-      if (wikiContent) {
-        wikiContent.addEventListener('click', onLinkClick as unknown as EventListener);
-      }
-    }, 100);
+    const wikiContent = document.querySelector('.wiki-content');
+    
+    if (wikiContent) {
+      wikiContent.addEventListener('click', handleWikiLinkClick);
+    }
     
     return () => {
-      clearTimeout(timeoutId);
-      const wikiContent = document.querySelector('.wiki-content');
       if (wikiContent) {
-        wikiContent.removeEventListener('click', onLinkClick as unknown as EventListener);
+        wikiContent.removeEventListener('click', handleWikiLinkClick);
       }
     };
-  }, [currentHtml, onLinkClick]);
+  }, [currentHtml, handleWikiLinkClick]);
 
   // Calculate progress percentage based on time remaining
   const progressPercentage = timeRemaining !== null && game?.timeLimit 
