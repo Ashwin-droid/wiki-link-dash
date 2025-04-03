@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useGameContext } from "@/contexts/GameContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { GameStatus } from "@/types/game";
 import { formatTime } from "@/lib/utils";
 import CurrentLeaderboard from "@/components/CurrentLeaderboard";
+import { useToast } from "@/hooks/use-toast";
 
 const GamePlay: React.FC = () => {
   const { 
@@ -18,79 +19,91 @@ const GamePlay: React.FC = () => {
     timeRemaining 
   } = useGameContext();
   const [loading, setLoading] = useState(true);
-  const [currentUrl, setCurrentUrl] = useState("");
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [currentHtml, setCurrentHtml] = useState("");
+  const [currentArticle, setCurrentArticle] = useState("");
+  const { toast } = useToast();
   
   const startPageName = game?.startPage?.split("/").pop()?.replace(/_/g, " ") || "";
   const endPageName = game?.endPage?.split("/").pop()?.replace(/_/g, " ") || "";
 
-  // Track the current page URL and check for completion
-  useEffect(() => {
-    if (!currentUrl || !game) return;
-    
-    // Extract the path from the full URL
-    const urlPath = currentUrl.includes('/wiki/') 
-      ? '/wiki/' + currentUrl.split('/wiki/')[1]
-      : currentUrl;
-    
-    // Check if player reached the goal
-    checkGameCompletion(urlPath);
-  }, [currentUrl, game, checkGameCompletion]);
-
-  const handleIframeLoad = () => {
-    setLoading(false);
-    
-    if (!iframeRef.current) return;
-    
+  // Function to fetch Wikipedia article HTML
+  const fetchWikiHtml = useCallback(async (articleTitle: string): Promise<string> => {
+    setLoading(true);
     try {
-      // Since we can't directly access the iframe's content due to cross-origin restrictions,
-      // we'll use message passing to track navigation
+      const formattedTitle = articleTitle.startsWith('/wiki/') 
+        ? articleTitle.substring(6) // Remove /wiki/ prefix
+        : articleTitle;
+        
+      const res = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(formattedTitle)}`
+      );
       
-      // First, get the initial URL after load
-      const iframe = iframeRef.current;
-      const iframeSrc = iframe.src;
-      
-      // Set the initial URL
-      if (iframeSrc.includes('/wiki/')) {
-        const path = '/wiki/' + iframeSrc.split('/wiki/')[1];
-        setCurrentUrl(path);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch article: ${res.status}`);
       }
       
-      // This will inject a script into the iframe that sends messages when links are clicked
-      // This approach is safer and avoids cross-origin issues
-      iframe.onload = () => {
-        setLoading(false);
-      };
+      let html = await res.text();
+      
+      // Rewrite links to use our click handler
+      html = html.replace(
+        /href="\/wiki\/([^"#]+)([#"][^"]*)?"/g,
+        (match, articleSlug, hash = "") => {
+          return `href="#" data-article="${articleSlug}"${hash.startsWith('#') ? ` data-section="${hash.substring(1)}"` : ''}`;
+        }
+      );
+      
+      return html;
     } catch (error) {
-      console.error("Error handling iframe:", error);
+      console.error("Error fetching Wikipedia article:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load Wikipedia article",
+        variant: "destructive",
+      });
+      return "<div>Failed to load article. Please try again.</div>";
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [toast]);
 
-  // Inject a message listener for communication from the iframe
+  // Load initial article when game starts
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Verify the origin for security
-      if (event.origin !== 'https://en.wikipedia.org') return;
-      
-      if (event.data && event.data.type === 'pageNavigated') {
-        const newUrl = event.data.url;
-        setCurrentUrl(newUrl);
-        handleLinkClick(newUrl);
-      }
-    };
-    
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [handleLinkClick]);
+    if (game?.startPage && (!currentArticle || currentArticle === "")) {
+      const articleTitle = game.startPage.startsWith('/wiki/') 
+        ? game.startPage.substring(6) 
+        : game.startPage;
+        
+      setCurrentArticle(articleTitle);
+      fetchWikiHtml(articleTitle).then(html => setCurrentHtml(html));
+    }
+  }, [game, fetchWikiHtml, currentArticle]);
 
-  // Create a proxy URL that will help us track clicks
-  const getProxyUrl = () => {
-    if (!game?.startPage) return '';
+  // Handle link clicks
+  const onLinkClick = useCallback((evt: React.MouseEvent) => {
+    if (!game || !currentPlayer) return;
     
-    // We'll use a proxy service that allows us to inject scripts
-    // This is an alternative approach since direct script injection isn't working
-    return `https://en.wikipedia.org${game.startPage}`;
-  };
+    // Find the closest anchor tag
+    const target = evt.target as HTMLElement;
+    const link = target.closest("a[data-article]");
+    
+    if (link) {
+      evt.preventDefault(); // Block normal navigation
+      const newArticle = link.getAttribute("data-article")!;
+      const newUrl = `/wiki/${newArticle}`;
+      
+      // Update game state with the new click
+      handleLinkClick(newUrl);
+      
+      // Check if the user has reached the goal
+      const gameCompleted = checkGameCompletion(newUrl);
+      
+      if (!gameCompleted) {
+        // If game is not complete, load the new article
+        setCurrentArticle(newArticle);
+        fetchWikiHtml(newArticle).then(html => setCurrentHtml(html));
+      }
+    }
+  }, [game, currentPlayer, handleLinkClick, checkGameCompletion, fetchWikiHtml]);
 
   // Calculate progress percentage based on time remaining
   const progressPercentage = timeRemaining !== null && game?.timeLimit 
@@ -100,25 +113,6 @@ const GamePlay: React.FC = () => {
   const isFinished = currentPlayer?.finished || false;
   const hasResigned = currentPlayer?.resigned || false;
   const gameEnded = game?.status === GameStatus.COMPLETED;
-
-  const handleManualClick = (url: string) => {
-    if (!url.startsWith('/wiki/')) return;
-    
-    // Update the current URL
-    setCurrentUrl(url);
-    
-    // Add the click to the counter
-    handleLinkClick(url);
-    
-    // Navigate the iframe
-    if (iframeRef.current) {
-      iframeRef.current.src = `https://en.wikipedia.org${url}`;
-    }
-  };
-
-  useEffect(() => {
-    setLoading(true);
-  }, []);
 
   if (!game || !currentPlayer) return null;
 
@@ -163,20 +157,20 @@ const GamePlay: React.FC = () => {
       ) : (
         <div className="relative flex-1">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-muted">
+            <div className="absolute inset-0 flex items-center justify-center bg-muted z-10">
               <div className="text-center">
-                <div className="animate-pulse-slow mb-2">Loading Wikipedia...</div>
+                <div className="animate-pulse mb-2">Loading Wikipedia...</div>
                 <div className="text-sm text-muted-foreground">This may take a few seconds</div>
               </div>
             </div>
           )}
-          <iframe 
-            ref={iframeRef}
-            src={getProxyUrl()}
-            className="wiki-iframe"
-            onLoad={handleIframeLoad}
-            title="Wikipedia"
-          />
+          
+          <div 
+            className="wiki-content bg-white p-4 rounded-lg border border-gray-200 overflow-auto h-[70vh]"
+            onClick={onLinkClick}
+          >
+            <div dangerouslySetInnerHTML={{ __html: currentHtml }} />
+          </div>
           
           <div className="mt-4 flex justify-between">
             <Button variant="outline" onClick={resignGame}>
