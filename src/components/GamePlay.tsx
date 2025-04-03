@@ -88,6 +88,8 @@ const GamePlay: React.FC = () => {
     
     if (link) {
       evt.preventDefault(); // Block normal navigation
+      evt.stopPropagation(); // Stop event bubbling
+      
       const newArticle = link.getAttribute("data-article")!;
       const newUrl = `/wiki/${newArticle}`;
       
@@ -167,9 +169,12 @@ const GamePlay: React.FC = () => {
           
           <div 
             className="wiki-content bg-white p-4 rounded-lg border border-gray-200 overflow-auto h-[70vh]"
-            onClick={onLinkClick}
           >
-            <div dangerouslySetInnerHTML={{ __html: currentHtml }} />
+            {/* Use a container that will capture all link clicks */}
+            <div 
+              onClick={onLinkClick}
+              dangerouslySetInnerHTML={{ __html: currentHtml }} 
+            />
           </div>
           
           <div className="mt-4 flex justify-between">
