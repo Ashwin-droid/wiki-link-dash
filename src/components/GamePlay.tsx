@@ -44,11 +44,12 @@ const GamePlay: React.FC = () => {
       
       let html = await res.text();
       
-      // Rewrite links to use our click handler
+      // Process the links to use a click handler instead of href navigation
       html = html.replace(
         /href="\/wiki\/([^"#]+)([#"][^"]*)?"/g,
         (match, articleSlug, hash = "") => {
-          return `href="#" data-article="${articleSlug}"${hash.startsWith('#') ? ` data-section="${hash.substring(1)}"` : ''}`;
+          // Use a special class to identify these links
+          return `class="wiki-internal-link" data-article="${articleSlug}"${hash.startsWith('#') ? ` data-section="${hash.substring(1)}"` : ''}`;
         }
       );
       
@@ -82,30 +83,58 @@ const GamePlay: React.FC = () => {
   const onLinkClick = useCallback((evt: React.MouseEvent) => {
     if (!game || !currentPlayer) return;
     
-    // Find the closest anchor tag
+    // Find the clicked element
     const target = evt.target as HTMLElement;
-    const link = target.closest("a[data-article]");
     
-    if (link) {
-      evt.preventDefault(); // Block normal navigation
-      evt.stopPropagation(); // Stop event bubbling
+    // Check if it's a Wikipedia internal link
+    if (target.classList.contains('wiki-internal-link') || target.closest('.wiki-internal-link')) {
+      evt.preventDefault();
       
-      const newArticle = link.getAttribute("data-article")!;
-      const newUrl = `/wiki/${newArticle}`;
+      // Get the closest link element if the click was on a child element
+      const linkElement = target.classList.contains('wiki-internal-link') 
+        ? target 
+        : target.closest('.wiki-internal-link');
       
-      // Update game state with the new click
-      handleLinkClick(newUrl);
-      
-      // Check if the user has reached the goal
-      const gameCompleted = checkGameCompletion(newUrl);
-      
-      if (!gameCompleted) {
-        // If game is not complete, load the new article
-        setCurrentArticle(newArticle);
-        fetchWikiHtml(newArticle).then(html => setCurrentHtml(html));
+      if (linkElement) {
+        const newArticle = linkElement.getAttribute('data-article');
+        
+        if (newArticle) {
+          const newUrl = `/wiki/${newArticle}`;
+          
+          // Update game state with the new click
+          handleLinkClick(newUrl);
+          
+          // Check if the user has reached the goal
+          const gameCompleted = checkGameCompletion(newUrl);
+          
+          if (!gameCompleted) {
+            // If game is not complete, load the new article
+            setCurrentArticle(newArticle);
+            fetchWikiHtml(newArticle).then(html => setCurrentHtml(html));
+          }
+        }
       }
     }
   }, [game, currentPlayer, handleLinkClick, checkGameCompletion, fetchWikiHtml]);
+
+  // Add event listener for wiki links after content is loaded
+  useEffect(() => {
+    // Add a small delay to ensure the DOM has been updated with the wiki content
+    const timeoutId = setTimeout(() => {
+      const wikiContent = document.querySelector('.wiki-content');
+      if (wikiContent) {
+        wikiContent.addEventListener('click', onLinkClick as unknown as EventListener);
+      }
+    }, 100);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      const wikiContent = document.querySelector('.wiki-content');
+      if (wikiContent) {
+        wikiContent.removeEventListener('click', onLinkClick as unknown as EventListener);
+      }
+    };
+  }, [currentHtml, onLinkClick]);
 
   // Calculate progress percentage based on time remaining
   const progressPercentage = timeRemaining !== null && game?.timeLimit 
@@ -168,15 +197,7 @@ const GamePlay: React.FC = () => {
           )}
           
           <div className="wiki-content bg-white p-4 rounded-lg border border-gray-200 overflow-auto h-[70vh]">
-            <div 
-              onClick={e => {
-                // Capture and process all clicks in the wiki content area
-                onLinkClick(e);
-                // Need to prevent any possibility of default link behavior
-                e.preventDefault();
-              }}
-              dangerouslySetInnerHTML={{ __html: currentHtml }} 
-            />
+            <div dangerouslySetInnerHTML={{ __html: currentHtml }} />
           </div>
           
           <div className="mt-4 flex justify-between">
