@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { GameStatus } from "@/types/game";
 import { formatTime } from "@/lib/utils";
+import CurrentLeaderboard from "@/components/CurrentLeaderboard";
 
 const GamePlay: React.FC = () => {
   const { 
@@ -34,7 +35,10 @@ const GamePlay: React.FC = () => {
       const currentUrl = contentWindow.location.pathname;
       
       // Check if player reached the goal
-      checkGameCompletion(currentUrl);
+      const completed = checkGameCompletion(currentUrl);
+      
+      // If player reached the goal, don't set up any more link handlers
+      if (completed) return;
       
       // Add click event listeners to all internal links within the iframe
       const links = contentWindow.document.querySelectorAll('a');
@@ -102,20 +106,24 @@ const GamePlay: React.FC = () => {
       </div>
       
       {(isFinished || hasResigned || gameEnded) ? (
-        <div className="w-full flex-1 flex items-center justify-center bg-muted rounded-md p-8">
-          <div className="text-center">
+        <div className="w-full flex-1 flex flex-col bg-muted rounded-md p-6">
+          <div className="text-center mb-6">
             {isFinished ? (
-              <h2 className="text-2xl font-bold mb-4">You reached the destination!</h2>
+              <h2 className="text-2xl font-bold mb-2">You reached the destination!</h2>
             ) : hasResigned ? (
-              <h2 className="text-2xl font-bold mb-4">You resigned from the game</h2>
+              <h2 className="text-2xl font-bold mb-2">You resigned from the game</h2>
             ) : (
-              <h2 className="text-2xl font-bold mb-4">Game has ended</h2>
+              <h2 className="text-2xl font-bold mb-2">Game has ended</h2>
             )}
-            <p className="text-muted-foreground mb-6">
+            <p className="text-muted-foreground">
               {isFinished 
                 ? `You completed the challenge in ${currentPlayer.clicks} clicks.` 
                 : "Waiting for other players to finish..."}
             </p>
+          </div>
+          
+          <div className="flex-1">
+            <CurrentLeaderboard />
           </div>
         </div>
       ) : (
