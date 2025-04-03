@@ -1,6 +1,6 @@
 
 import React from "react";
-import { useGameContext } from "@/contexts/GameContext";
+import { useGameContext } from "@/contexts/game";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GameStatus } from "@/types/game";

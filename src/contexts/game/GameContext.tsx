@@ -1,24 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { v4 as uuidv4 } from "uuid";
-import { Game, GameStatus, Player, LeaderboardEntry } from "../types/game";
-import { useToast } from "@/components/ui/use-toast";
 
-interface GameContextProps {
-  game: Game | null;
-  currentPlayer: Player | null;
-  leaderboard: LeaderboardEntry[];
-  username: string;
-  setUsername: (username: string) => void;
-  createGame: (startPage: string, endPage: string, timeLimit: number) => void;
-  joinGame: (gameId: string) => boolean;
-  startGame: () => void;
-  handleLinkClick: (url: string) => void;
-  checkGameCompletion: (currentPage: string) => boolean;
-  kickPlayer: (playerId: string) => void;
-  resignGame: () => void;
-  resetGame: () => void;
-  timeRemaining: number | null;
-}
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { Game, GameStatus } from "../../types/game";
+import { useToast } from "@/hooks/use-toast";
+import { GameContextProps, GameProviderProps } from "./types";
+import { normalizeUrl, generateGameId } from "./utils";
+import { useGameTimer } from "./useGameTimer";
+import { useLeaderboard } from "./useLeaderboard";
+import { usePlayerManager } from "./usePlayerManager";
 
 const GameContext = createContext<GameContextProps | undefined>(undefined);
 
@@ -30,50 +18,42 @@ export const useGameContext = () => {
   return context;
 };
 
-interface GameProviderProps {
-  children: ReactNode;
-}
-
 export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
-  const [username, setUsername] = useState<string>("");
-  const [userId, setUserId] = useState<string>("");
   const [game, setGame] = useState<Game | null>(null);
-  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const { toast } = useToast();
+  
+  const { 
+    userId, 
+    username, 
+    currentPlayer, 
+    setUsername, 
+    setCurrentPlayer, 
+    initializeUserId,
+    updatePlayerClick,
+    markPlayerFinished,
+    markPlayerResigned
+  } = usePlayerManager();
+  
+  const { leaderboard, updateLeaderboard } = useLeaderboard();
+  
+  const endGame = () => {
+    if (!game) return;
+
+    const updatedGame: Game = {
+      ...game,
+      status: GameStatus.COMPLETED,
+    };
+
+    setGame(updatedGame);
+    updateLeaderboard(updatedGame);
+  };
+  
+  const timeRemaining = useGameTimer(game, endGame);
 
   // Initialize user ID on component mount
   useEffect(() => {
-    const storedUserId = localStorage.getItem("hyperlink-hustle-user-id");
-    if (storedUserId) {
-      setUserId(storedUserId);
-    } else {
-      const newUserId = uuidv4();
-      localStorage.setItem("hyperlink-hustle-user-id", newUserId);
-      setUserId(newUserId);
-    }
+    initializeUserId();
   }, []);
-
-  // Timer effect for active games
-  useEffect(() => {
-    if (!game || game.status !== GameStatus.ACTIVE || !game.endAt) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      const remaining = Math.max(0, game.endAt! - Date.now());
-      setTimeRemaining(remaining);
-      
-      // Check for game end by timeout
-      if (remaining <= 0) {
-        endGame();
-        clearInterval(intervalId);
-      }
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [game]);
 
   const createGame = (startPage: string, endPage: string, timeLimit: number) => {
     if (!username || !userId) {
@@ -85,7 +65,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       return;
     }
 
-    const gameId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const gameId = generateGameId();
     
     const newGame: Game = {
       id: gameId,
@@ -199,7 +179,6 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     };
 
     setGame(updatedGame);
-    setTimeRemaining(game.timeLimit * 1000);
     
     toast({
       title: "Game started!",
@@ -209,37 +188,13 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
 
   const handleLinkClick = (url: string) => {
     if (!game || !currentPlayer) return;
-
-    // Update player's click count and current page
-    const updatedPlayer: Player = {
-      ...currentPlayer,
-      clicks: currentPlayer.clicks + 1,
-      currentPage: url,
-    };
-
-    const updatedGame = {
-      ...game,
-      players: {
-        ...game.players,
-        [userId]: updatedPlayer,
-      },
-    };
-
+    
+    const updatedGame = updatePlayerClick(game, url);
     setGame(updatedGame);
-    setCurrentPlayer(updatedPlayer);
   };
 
   const checkGameCompletion = (currentPage: string): boolean => {
     if (!game || !currentPlayer || currentPlayer.finished) return false;
-    
-    // Normalize URLs for comparison
-    const normalizeUrl = (url: string): string => {
-      // Extract the path after /wiki/
-      if (url.includes('/wiki/')) {
-        return '/wiki/' + url.split('/wiki/')[1].split('#')[0].split('?')[0];
-      }
-      return url.split('#')[0].split('?')[0];
-    };
     
     const normalizedCurrentPage = normalizeUrl(currentPage);
     const normalizedEndPage = normalizeUrl(game.endPage);
@@ -252,34 +207,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     if (normalizedCurrentPage === normalizedEndPage) {
       const finishTime = Date.now();
       
-      // Mark player as finished
-      const updatedPlayer: Player = {
-        ...currentPlayer,
-        finished: true,
-        finishTime,
-      };
-
-      const updatedGame = {
-        ...game,
-        players: {
-          ...game.players,
-          [userId]: updatedPlayer,
-        },
-      };
-
+      const updatedGame = markPlayerFinished(game, finishTime);
       setGame(updatedGame);
-      setCurrentPlayer(updatedPlayer);
       
-      // Calculate time taken in seconds
-      const timeTaken = finishTime - (game.startedAt || finishTime);
-      
-      // Add to leaderboard
-      updateLeaderboard();
-      
-      toast({
-        title: "Congratulations!",
-        description: `You reached the destination in ${currentPlayer.clicks} clicks and ${Math.floor(timeTaken/1000)} seconds!`,
-      });
+      updateLeaderboard(updatedGame);
       
       return true;
     }
@@ -325,26 +256,8 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const resignGame = () => {
     if (!game || !currentPlayer) return;
 
-    const updatedPlayer: Player = {
-      ...currentPlayer,
-      resigned: true,
-    };
-
-    const updatedGame = {
-      ...game,
-      players: {
-        ...game.players,
-        [userId]: updatedPlayer,
-      },
-    };
-
+    const updatedGame = markPlayerResigned(game);
     setGame(updatedGame);
-    setCurrentPlayer(updatedPlayer);
-    
-    toast({
-      title: "Resigned from game",
-      description: "You have left the current game",
-    });
 
     // Check if all players have finished or resigned
     checkAllPlayersFinished(updatedGame);
@@ -360,45 +273,10 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
     }
   };
 
-  const endGame = () => {
-    if (!game) return;
-
-    const updatedGame: Game = {
-      ...game,
-      status: GameStatus.COMPLETED,
-    };
-
-    setGame(updatedGame);
-    setTimeRemaining(0);
-    updateLeaderboard();
-  };
-
-  const updateLeaderboard = () => {
-    if (!game) return;
-
-    const entries: LeaderboardEntry[] = Object.values(game.players)
-      .filter((player) => player.finished && player.finishTime && !player.resigned)
-      .map((player) => ({
-        username: player.username,
-        clicks: player.clicks,
-        timeTaken: player.finishTime! - (game.startedAt || 0),
-      }))
-      .sort((a, b) => {
-        // Sort by clicks first, then by time
-        if (a.clicks !== b.clicks) {
-          return a.clicks - b.clicks;
-        }
-        return a.timeTaken - b.timeTaken;
-      });
-
-    setLeaderboard(entries);
-  };
-
   const resetGame = () => {
     setGame(null);
     setCurrentPlayer(null);
-    setLeaderboard([]);
-    setTimeRemaining(null);
+    updateLeaderboard(null);
   };
 
   return (

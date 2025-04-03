@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState } from "react";
-import { useGameContext } from "@/contexts/GameContext";
+import { useGameContext } from "@/contexts/game";
 import { 
   Table,
   TableBody,

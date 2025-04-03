@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState, useCallback } from "react";
-import { useGameContext } from "@/contexts/GameContext";
+import { useGameContext } from "@/contexts/game";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";

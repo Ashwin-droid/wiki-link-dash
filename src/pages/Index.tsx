@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import UsernameForm from "@/components/UsernameForm";
@@ -8,7 +7,7 @@ import GameJoinForm from "@/components/GameJoinForm";
 import GameLobby from "@/components/GameLobby";
 import GamePlay from "@/components/GamePlay";
 import Leaderboard from "@/components/Leaderboard";
-import { useGameContext } from "@/contexts/GameContext";
+import { useGameContext } from "@/contexts/game";
 import { GameStatus } from "@/types/game";
 
 enum GameScreen {
@@ -26,7 +25,6 @@ const Index = () => {
   const { game, username, joinGame, resetGame } = useGameContext();
   const location = useLocation();
 
-  // Check for game ID in URL when component mounts
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const gameId = params.get("gameId");
@@ -37,7 +35,6 @@ const Index = () => {
     }
   }, [location, username]);
 
-  // Update screen based on game state
   useEffect(() => {
     if (!game) return;
 
