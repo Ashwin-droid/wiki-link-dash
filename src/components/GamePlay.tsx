@@ -167,12 +167,14 @@ const GamePlay: React.FC = () => {
             </div>
           )}
           
-          <div 
-            className="wiki-content bg-white p-4 rounded-lg border border-gray-200 overflow-auto h-[70vh]"
-          >
-            {/* Use a container that will capture all link clicks */}
+          <div className="wiki-content bg-white p-4 rounded-lg border border-gray-200 overflow-auto h-[70vh]">
             <div 
-              onClick={onLinkClick}
+              onClick={e => {
+                // Capture and process all clicks in the wiki content area
+                onLinkClick(e);
+                // Need to prevent any possibility of default link behavior
+                e.preventDefault();
+              }}
               dangerouslySetInnerHTML={{ __html: currentHtml }} 
             />
           </div>
